@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Architecture Flow</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:0 auto;padding:24px 20px 80px;color:#1f2937;background:#fafafa}
+ h1{border-bottom:2px solid #e5e7eb;padding-bottom:8px}
+ h2{margin-top:36px;border-top:1px solid #e5e7eb;padding-top:18px;color:#111827}
+ pre.mermaid{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:14px 0 28px;overflow:auto;text-align:center}
+ .hint{position:sticky;top:0;background:#fff8e1;border:1px solid #f0d264;border-radius:6px;padding:8px 12px;font-size:13px;color:#5a4a00;margin-bottom:16px}
+ .mermaid svg{max-width:100%;height:auto}
+</style></head><body>
+<div class="hint">Tip: use Ctrl/Cmd + scroll or browser zoom to enlarge a diagram.</div>
+<h1>Architecture Flow</h1>
+<h2>Shravan v0.1 master flow</h2>
+<pre class="mermaid">%% Shravan v0.1 master flow
+%% files: app, lib
+%% granularity: master
+%% intended — not yet built
+flowchart TD
+  Entry["Open Shravan"] --&gt; Role{"Choose experience&lt;br/&gt;FUNCTION"}
+  Role --&gt;|Guardian| Auth["Guardian auth&lt;br/&gt;Supabase OTP or signed demo session"]
+  Auth --&gt; Dash["Guardian dashboard&lt;br/&gt;today, 14-day trends, alerts, digest"]
+  Dash --&gt; Manage["Elder profile + medication + invite management"]
+  Role --&gt;|Elder invite| Invite["Validate invite and persist Elder session"]
+  Invite --&gt; Elder["Elder Mode&lt;br/&gt;large Hindi/English actions"]
+  Elder --&gt; Checkin["Daily check-in&lt;br/&gt;deterministic safety then Claude"]
+  Elder --&gt; Meds["Medication cards&lt;br/&gt;idempotent taken log"]
+  Elder --&gt; Scam["Scam check&lt;br/&gt;rules set minimum risk then Claude"]
+  Checkin --&gt; DB[("shravan schema&lt;br/&gt;RLS-protected Postgres")]
+  Meds --&gt; DB
+  Scam --&gt; DB
+  Cron["Render cron&lt;br/&gt;IST escalation + Sunday digest"] --&gt; DB
+  Cron --&gt; Claude["Anthropic API&lt;br/&gt;server-side only"]
+  Checkin --&gt; Claude
+  Scam --&gt; Claude
+  DB --&gt; Dash
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  class Auth,Dash,Manage,Invite,Elder,Meds,Cron fn;
+  class Role dec;
+  class Checkin,Scam,Claude agent;
+  class DB data;
+
+</pre>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad:false, securityLevel:"loose", theme:"base",
+  themeVariables:{ fontFamily:"-apple-system, Segoe UI, Roboto, sans-serif", fontSize:"14px" } });
+await mermaid.run({ querySelector:"pre.mermaid" });
+</script>
+</body></html>
