@@ -13,38 +13,100 @@
 <h1>Architecture Flow</h1>
 <h2>Shravan v0.1 master flow</h2>
 <pre class="mermaid">%% Shravan v0.1 master flow
-%% files: app, lib
+%% files: app/page.tsx, app/dashboard/page.tsx, app/elder/page.tsx, app/api/chat/route.ts, app/api/scam-check/route.ts, app/api/cron/escalations/route.ts, app/api/cron/digest/route.ts, lib/data.ts, .github/workflows/ci.yml, render.yaml
 %% granularity: master
-%% intended — not yet built
 flowchart TD
   Entry["Open Shravan"] --&gt; Role{"Choose experience&lt;br/&gt;FUNCTION"}
-  Role --&gt;|Guardian| Auth["Guardian auth&lt;br/&gt;Supabase OTP or signed demo session"]
+  Role --&gt;|Guardian| Auth["Guardian auth&lt;br/&gt;Supabase OTP; public demo local/opt-in only"]
   Auth --&gt; Dash["Guardian dashboard&lt;br/&gt;today, 14-day trends, alerts, digest"]
   Dash --&gt; Manage["Elder profile + medication + invite management"]
   Role --&gt;|Elder invite| Invite["Validate invite and persist Elder session"]
   Invite --&gt; Elder["Elder Mode&lt;br/&gt;large Hindi/English actions"]
-  Elder --&gt; Checkin["Daily check-in&lt;br/&gt;deterministic safety then Claude"]
+  Elder --&gt; Checkin["Daily check-in&lt;br/&gt;fixed distress fail-safe then Claude"]
   Elder --&gt; Meds["Medication cards&lt;br/&gt;idempotent taken log"]
-  Elder --&gt; Scam["Scam check&lt;br/&gt;rules set minimum risk then Claude"]
+  Elder --&gt; Scam["Scam check&lt;br/&gt;rules set minimum risk; Guardian-capped Claude calls"]
   Checkin --&gt; DB[("shravan schema&lt;br/&gt;RLS-protected Postgres")]
   Meds --&gt; DB
   Scam --&gt; DB
-  Cron["Render cron&lt;br/&gt;IST escalation + Sunday digest"] --&gt; DB
+  Cron["Render cron&lt;br/&gt;IST escalation + schedule-aware Sunday digest"] --&gt; DB
   Cron --&gt; Claude["Anthropic API&lt;br/&gt;server-side only"]
   Checkin --&gt; Claude
   Scam --&gt; Claude
   DB --&gt; Dash
+  CI["GitHub CI&lt;br/&gt;typecheck, tests, production build"] --&gt; Deploy["Render Blueprint&lt;br/&gt;checks-pass deployment gate"]
+  Deploy --&gt; Auth
+  Deploy --&gt; Cron
   classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
   classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
   classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
   classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
   classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
   classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
-  class Auth,Dash,Manage,Invite,Elder,Meds,Cron fn;
+  class Auth,Dash,Manage,Invite,Elder,Meds,Cron,CI,Deploy fn;
   class Role dec;
   class Checkin,Scam,Claude agent;
   class DB data;
-
+</pre>
+<h2>Daily check-in flow</h2>
+<pre class="mermaid">%% Daily check-in flow
+%% files: app/api/chat/route.ts, lib/prompts.ts, lib/safety.ts, lib/validation.ts
+%% granularity: full
+flowchart TD
+  Request["CHAT REQUEST&lt;br/&gt;[FUNCTION]&lt;br/&gt;in: signed Elder cookie + message&lt;br/&gt;out: validated Elder and request"] --&gt; PersistUser["PERSIST TURN&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;in: conversation + user text&lt;br/&gt;out: stored message"]
+  PersistUser --&gt; Distress{"DISTRESS GATE&lt;br/&gt;[FUNCTION]&lt;br/&gt;known distress phrase?"}
+  Distress --&gt;|yes| Urgent["URGENT FAIL-SAFE&lt;br/&gt;[FUNCTION]&lt;br/&gt;in: distress text&lt;br/&gt;out: fixed 112 script even if alert write fails"]
+  Distress --&gt;|no| Context["LOAD CONTEXT&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;in: Elder + today&lt;br/&gt;out: last 30 messages, meds, prior summary, usage"]
+  Context --&gt; Budget{"DAILY BUDGET&lt;br/&gt;[FUNCTION]&lt;br/&gt;tokens ≥ DAILY_TOKEN_BUDGET?"}
+  Budget --&gt;|yes| Close["SHORT SAFE CLOSE&lt;br/&gt;[FUNCTION]&lt;br/&gt;in: preferred language&lt;br/&gt;out: fixed closing response"]
+  Budget --&gt;|no| TurnCap{"TURN CAP&lt;br/&gt;[FUNCTION]&lt;br/&gt;all conversation user turns ≥ 25?"}
+  TurnCap --&gt; Prompt["BUILD PROMPT&lt;br/&gt;[FUNCTION]&lt;br/&gt;in: untrusted profile/history data + force-close&lt;br/&gt;out: data-bounded safety system prompt"]
+  Prompt --&gt; Claude["STREAM CHECK-IN&lt;br/&gt;[AGENT · claude-sonnet-4-6]&lt;br/&gt;in: prompt + ≤30 messages&lt;br/&gt;out: text deltas + optional save_checkin"]
+  Claude --&gt; Validate{"TOOL VALID?&lt;br/&gt;[LIBRARY · Zod]&lt;br/&gt;mood 1–5 + typed fields?"}
+  Validate --&gt;|yes| Save["UPSERT CHECK-IN&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;in: one structured tool call&lt;br/&gt;out: one row per Elder/date"]
+  Validate --&gt;|no| Message["PERSIST ASSISTANT&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;in: streamed text&lt;br/&gt;out: conversation continuity"]
+  Save --&gt; Message
+  Message --&gt; Result["NDJSON COMPLETE&lt;br/&gt;[FUNCTION]&lt;br/&gt;out: saved flag + token usage; failures logged"]
+  Urgent --&gt; Result
+  Close --&gt; Result
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  class Request,Distress,Urgent,Budget,Close,TurnCap,Prompt,Result fn;
+  class Context,PersistUser,Save,Message data;
+  class Claude agent;
+  class Validate data;
+</pre>
+<h2>Deterministic alert and digest flow</h2>
+<pre class="mermaid">%% Deterministic alert and digest flow
+%% files: app/api/scam-check/route.ts, app/api/cron/escalations/route.ts, app/api/cron/digest/route.ts, lib/safety.ts, lib/cron.ts, scripts/call-cron.mjs, render.yaml
+%% granularity: full
+flowchart TD
+  Cron["RENDER CRON REQUEST&lt;br/&gt;[FUNCTION]&lt;br/&gt;in: private web host + shared generated secret&lt;br/&gt;out: authenticated IST run"] --&gt; Auth{"BEARER GATE&lt;br/&gt;[FUNCTION]&lt;br/&gt;exact CRON_SECRET?"}
+  Auth --&gt;|no| Deny["401&lt;br/&gt;[FUNCTION]&lt;br/&gt;out: no database work"]
+  Auth --&gt;|yes| Kind{"JOB TYPE&lt;br/&gt;[FUNCTION]&lt;br/&gt;escalation or digest?"}
+  Kind --&gt;|escalation| Time{"MISSED GATE&lt;br/&gt;[FUNCTION]&lt;br/&gt;IST hour ≥ 20 and no check-in?"}
+  Time --&gt;|yes| Missed["IDEMPOTENT ALERT&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;dedupe: Elder + date + MISSED"]
+  Time --&gt;|no| Mood
+  Missed --&gt; Mood{"LOW-MOOD GATE&lt;br/&gt;[FUNCTION]&lt;br/&gt;last two consecutive dates ≤ 2?"}
+  Mood --&gt;|yes| Low["IDEMPOTENT ALERT&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;dedupe: Elder + latest date + LOW"]
+  Mood --&gt;|no| Done["RUN SUMMARY&lt;br/&gt;[FUNCTION]&lt;br/&gt;out: created counts"]
+  Low --&gt; Done
+  Kind --&gt;|digest| History["WEEK DATA&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;in: IST week + schedule-active days&lt;br/&gt;out: check-ins, adherence, alerts"]
+  History --&gt; Digest["WRITE DIGEST&lt;br/&gt;[AGENT · claude-haiku-4-5-20251001]&lt;br/&gt;in: untrusted factual JSON&lt;br/&gt;out: ≤150 words or logged factual fallback"]
+  Digest --&gt; Upsert["UPSERT DIGEST&lt;br/&gt;[DATA · Postgres]&lt;br/&gt;key: Elder + week_start"]
+  Upsert --&gt; Done
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  class Cron,Auth,Deny,Kind,Time,Mood,Done fn;
+  class Missed,Low,History,Upsert data;
+  class Digest agent;
 </pre>
 <script type="module">
 import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";

@@ -61,9 +61,8 @@
       "enabled": true
     },
     "security_baseline": {
-      "done": false,
-      "completed_date": null
+      "done": true,
+      "completed_date": "2026-07-24"
     }
   }
 }
-

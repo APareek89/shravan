@@ -1,0 +1,30 @@
+%% Daily check-in flow
+%% files: app/api/chat/route.ts, lib/prompts.ts, lib/safety.ts, lib/validation.ts
+%% granularity: full
+flowchart TD
+  Request["CHAT REQUEST<br/>[FUNCTION]<br/>in: signed Elder cookie + message<br/>out: validated Elder and request"] --> PersistUser["PERSIST TURN<br/>[DATA · Postgres]<br/>in: conversation + user text<br/>out: stored message"]
+  PersistUser --> Distress{"DISTRESS GATE<br/>[FUNCTION]<br/>known distress phrase?"}
+  Distress -->|yes| Urgent["URGENT FAIL-SAFE<br/>[FUNCTION]<br/>in: distress text<br/>out: fixed 112 script even if alert write fails"]
+  Distress -->|no| Context["LOAD CONTEXT<br/>[DATA · Postgres]<br/>in: Elder + today<br/>out: last 30 messages, meds, prior summary, usage"]
+  Context --> Budget{"DAILY BUDGET<br/>[FUNCTION]<br/>tokens ≥ DAILY_TOKEN_BUDGET?"}
+  Budget -->|yes| Close["SHORT SAFE CLOSE<br/>[FUNCTION]<br/>in: preferred language<br/>out: fixed closing response"]
+  Budget -->|no| TurnCap{"TURN CAP<br/>[FUNCTION]<br/>all conversation user turns ≥ 25?"}
+  TurnCap --> Prompt["BUILD PROMPT<br/>[FUNCTION]<br/>in: untrusted profile/history data + force-close<br/>out: data-bounded safety system prompt"]
+  Prompt --> Claude["STREAM CHECK-IN<br/>[AGENT · claude-sonnet-4-6]<br/>in: prompt + ≤30 messages<br/>out: text deltas + optional save_checkin"]
+  Claude --> Validate{"TOOL VALID?<br/>[LIBRARY · Zod]<br/>mood 1–5 + typed fields?"}
+  Validate -->|yes| Save["UPSERT CHECK-IN<br/>[DATA · Postgres]<br/>in: one structured tool call<br/>out: one row per Elder/date"]
+  Validate -->|no| Message["PERSIST ASSISTANT<br/>[DATA · Postgres]<br/>in: streamed text<br/>out: conversation continuity"]
+  Save --> Message
+  Message --> Result["NDJSON COMPLETE<br/>[FUNCTION]<br/>out: saved flag + token usage; failures logged"]
+  Urgent --> Result
+  Close --> Result
+  classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
+  classDef fn fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef dec fill:#f3e8ff,stroke:#9333ea,color:#2a0a4a;
+  classDef term fill:#e5e7eb,stroke:#6b7280,color:#111827;
+  classDef ask fill:#cffafe,stroke:#0891b2,color:#083344;
+  classDef data fill:#ede9fe,stroke:#7c3aed,color:#2a0a4a;
+  class Request,Distress,Urgent,Budget,Close,TurnCap,Prompt,Result fn;
+  class Context,PersistUser,Save,Message data;
+  class Claude agent;
+  class Validate data;

@@ -1,0 +1,83 @@
+envVarGroups:
+  - name: shravan-cron-auth
+    envVars:
+      - key: CRON_SECRET
+        generateValue: true
+
+services:
+  - type: web
+    name: shravan
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    preDeployCommand: pnpm db:migrate
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: CHECKIN_MODEL
+        value: claude-sonnet-4-6
+      - key: UTILITY_MODEL
+        value: claude-haiku-4-5-20251001
+      - key: DAILY_TOKEN_BUDGET
+        value: 12000
+      - key: DAILY_SCAM_MODEL_LIMIT
+        value: 20
+      - key: ENABLE_PUBLIC_DEMO
+        value: "false"
+      - key: DEMO_SESSION_SECRET
+        generateValue: true
+      - key: APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - fromGroup: shravan-cron-auth
+
+  - type: cron
+    name: shravan-escalations
+    runtime: node
+    region: singapore
+    plan: starter
+    schedule: "0 15 * * *"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: node scripts/call-cron.mjs escalations
+    envVars:
+      - key: APP_HOST
+        fromService:
+          type: web
+          name: shravan
+          property: host
+      - fromGroup: shravan-cron-auth
+
+  - type: cron
+    name: shravan-weekly-digest
+    runtime: node
+    region: singapore
+    plan: starter
+    schedule: "30 12 * * SUN"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: node scripts/call-cron.mjs digest
+    envVars:
+      - key: APP_HOST
+        fromService:
+          type: web
+          name: shravan
+          property: host
+      - fromGroup: shravan-cron-auth
