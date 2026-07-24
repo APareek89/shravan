@@ -1,5 +1,5 @@
 # Handoff.MD — Shravan
-last-synced: `1aa1603`
+last-synced: `f494264`
 > AGENT: read this fully at session start. FIRST reconcile `last-synced..HEAD`.
 > Update before every checkpoint commit and phase end. Keep under ~40 lines.
 

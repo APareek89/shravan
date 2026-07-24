@@ -33,7 +33,7 @@ flowchart TD
   Checkin --&gt; Claude
   Scam --&gt; Claude
   DB --&gt; Dash
-  CI["GitHub CI&lt;br/&gt;typecheck, tests, production build"] --&gt; Deploy["Render Blueprint&lt;br/&gt;checks-pass deployment gate"]
+  CI["GitHub CI on Node 24&lt;br/&gt;typecheck, tests, production build"] --&gt; Deploy["Render Blueprint&lt;br/&gt;checks-pass deployment gate"]
   Deploy --&gt; Auth
   Deploy --&gt; Cron
   classDef agent fill:#dbeafe,stroke:#2563eb,color:#0b2a5b;
